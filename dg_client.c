@@ -33,11 +33,11 @@ int on_same_subnet(char server[15], char client[15], char nmsk_str[15]){
 	for(i = 0; i < network_len; i++)
 }
 */
-int on_same_subnet( struct sockaddr_in client_addr_in, struct sockaddr_in server_addr_in, struct sockaddr_in mask){
-	uint32_t client_addr = htonl(client_addr_iin.sin_addr.s_addr);
+int on_same_subnet( struct sockaddr_in server_addr_in, struct sockaddr_in* client_addr_in, struct sockaddr_in* mask){
+	uint32_t client_addr = htonl(client_addr_in->sin_addr.s_addr);
 	uint32_t server_addr = htonl(server_addr_in.sin_addr.s_addr);
-	uint32_t mask = htonl(mask.sin_addr.s_addr);
-	if((client_addr & mask) == (server_addr & mask))
+	uint32_t mask_addr = htonl(mask->sin_addr.s_addr);
+	if((client_addr & mask_addr) == (server_addr & mask_addr))
 		return 1;
 	else
 		return 0;
@@ -52,7 +52,7 @@ int main(int argc, char* argv[]){
 	int server_port = 0;
 	int i =0, ret = 0;
 	char server_str_addr[15], client_str_addr[15];
-	struct sockaddr_in *server_addr_in, *client_host_addr_in;
+	struct sockaddr_in server_addr_in, *client_host_addr_in;
 	
 	struct ifi_info* ifi = NULL;
 	struct ifi_info* ifihead = NULL;
@@ -69,7 +69,7 @@ int main(int argc, char* argv[]){
 	struct sockaddr_in *subnet_mask_in;
 	int server_is_local = 0;
 
-	struct sockaddr *IPclient = NULL;
+	struct sockaddr IPclient;
 	struct sockaddr_in IPclient_addr_in;
 	
 	fp = fopen(argv[1], "r");	
@@ -83,6 +83,8 @@ int main(int argc, char* argv[]){
 		printf("%s", read_file_line);
 		if(i == 0){
 			ret = inet_pton(AF_INET, read_file_line, &server_addr_in.sin_addr);
+			sa = (struct sockaddr*) &server_addr_in;
+			printf("server address from file is %s\n ", Sock_ntop_host(sa, sizeof(*sa)));
 			if(ret == -1)
 				printf("Given IP address is not valid IPv4 address.\nProvide a valid IPv4 address\n");
 			printf("\n");
@@ -148,7 +150,10 @@ int main(int argc, char* argv[]){
 	
 	//if server is loopback
 	if(server_is_loopback){
-		ret = inet_ntop(AF_NET, loopback_str, &(IPclient_addr_in.sin_addr));
+	//	ret = inet_pton(AF_INET, loopback_str, &IPclient_addr_in.sin_addr);
+		ret = inet_pton(AF_INET, loopback_str, &IPclient_addr_in.sin_addr);
+	//	IPclient_addr_in = (struct sockaddr_in) IPclient;
+		printf("server is loopback\n");
 		if(ret == -1){
 			printf("cannot set loopback client address\n");
 		}
@@ -166,22 +171,24 @@ int main(int argc, char* argv[]){
 				subnet_mask_in = (struct sockaddr_in*) sa;
 			}
 
-			if(on_same_subnet(server_addr_in, client_host_addr_in, subnet_mask_in)){				
-				ret = inet_ntop(AF_NET, client_str_addr, &(IPclient_addr_in.sin_addr));
+			if(on_same_subnet(server_addr_in, client_host_addr_in, subnet_mask_in)){
+				ret = inet_pton(AF_INET, client_str_addr, &(IPclient_addr_in.sin_addr));
 				if(ret == -1){
 					printf("cannot set local client address\n");
 				}
+				printf("server is local\n");
 				server_is_local = 1;
 			}
 		}
 
 		if(!server_is_local){
-			sa = ifihead->ifi_next->ifiaddr;
+			sa = ifihead->ifi_next->ifi_addr;
 			strcpy(client_str_addr, sock_ntop(sa, sizeof(*sa))); 
-			ret = inet_ntop(AF_NET, client_str_addr, &(IPclient_addr_in.sin_addr));
+			ret = inet_pton(AF_INET, client_str_addr, &(IPclient_addr_in.sin_addr));
 			if(ret == -1){
 				printf("cannot set arbitrary client address\n");
 			}
+			printf("server is kuch bhi\n");
 		}
 	}
 
