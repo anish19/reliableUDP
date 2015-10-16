@@ -166,7 +166,7 @@ int main(int argc, char* argv[]){
 				subnet_mask_in = (struct sockaddr_in*) sa;
 			}
 
-			if(on_same_subnet(serveraddr_in, client_host_addr_in, subnet_mask_in)){				
+			if(on_same_subnet(server_addr_in, client_host_addr_in, subnet_mask_in)){				
 				ret = inet_ntop(AF_NET, client_str_addr, &(IPclient_addr_in.sin_addr));
 				if(ret == -1){
 					printf("cannot set local client address\n");
