@@ -75,6 +75,8 @@ int main(int argc, char* argv[]){
 	struct sockaddr_in *IPclient_addr_in, *IPserver_addr_in;
 	
 	int sockfd; //socket fd for client
+	struct sockaddr *local_addr = NULL;
+	int local_addr_len = 0;
 
 	fp = fopen(argv[1], "r");	
 	
@@ -192,8 +194,6 @@ int main(int argc, char* argv[]){
 				printf("client on same subnet is %s\n", sock_ntop(client_addr, sizeof(client_addr)));
 				server_is_local = 1;
 
-				IPclient_addr = (struct sockaddr*)IPclient_addr_in;
-				printf("IPclient on same subnet is %s\n", sock_ntop(IPclient_addr, sizeof(IPclient_addr)));
 			}
 			else{
 			
@@ -214,25 +214,50 @@ int main(int argc, char* argv[]){
 				
 	}
 	
+	IPclient_addr_in->sin_port = htons(0);
 	IPclient_addr = (struct sockaddr*)IPclient_addr_in;
 	printf("IPclient is %s\n", sock_ntop(IPclient_addr, sizeof(IPclient_addr)));
 	printf("IPserver is %s\n", sock_ntop(IPserver_addr, sizeof(IPserver_addr)));
-
+	printf("\n");
 	sockfd = socket(AF_INET, SOCK_DGRAM, 0);
 	if(sockfd == -1){
 		printf("cound not create client socket\n");
 	}
 
+
 	if( ( ret = bind(sockfd, IPclient_addr, sizeof(*IPclient_addr)) == -1)){
 		printf("Could not bind client IP address to socket\n");
 		close(sockfd);
 	}
+	if(server_is_loopback || server_is_local){
+		if( ( ret = setsockopt(sockfd, SOL_SOCKET, SO_DONTROUTE, (void*)&on, sizeof(on) ) ) < 0 ){
+			printf("setsockopt SO_DONTROUTE failed\n");
+			close(sockfd);
+		}
+		if( ( ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (void*)&on, sizeof(on) ) ) < 0 ){
+			printf("setsockopt SO_REUSEADDR failed\n");
+			close(sockfd);
+		}
+	}
+	else{
+		if( ( ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (void*)&on, sizeof(on) ) ) < 0 ){
+			printf("setsockopt SO_REUSEADDR failed\n");
+			close(sockfd);
+		}
+	}
 
-	if( ( ret = setsockopt(sockfd, SOL_SOCKET, SO_DONTROUTE, (void*)&on, sizeof(on) ) ) < 0 ){
-		printf("setsockopt failed\n");
+	local_addr_len = sizeof(*IPclient_addr);
+	local_addr = (struct sockaddr*) malloc(sizeof(struct sockaddr));
+	if( (ret = getsockname(sockfd, local_addr, &local_addr_len) ) == -1 ){
+		printf("getsockname failed\n");
 		close(sockfd);
 	}
-	
+	printf("ret is %d\n", ret);
+	printf("local addr len is %d\n", local_addr_len);
+	printf("The local client address after binding to fd is %s\n", sock_ntop(local_addr, sizeof(local_addr)) );
+
+		
+
 	free_ifi_info_plus(ifihead);
 
 	fclose(fp);
