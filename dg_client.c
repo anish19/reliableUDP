@@ -50,10 +50,12 @@ int main(int argc, char* argv[]){
 	size_t len = 128;
 	
 	int server_port = 0;
-	int i =0, ret = 0;
+	int i =0, ret = 0, on = 1;
 	char server_str_addr[15], client_str_addr[15];
-	struct sockaddr_in server_addr_in, *client_host_addr_in;
-	
+	struct in_addr server_in_addr;
+	struct sockaddr_in *client_host_addr_in, server_addr_in;
+	struct sockaddr *client_addr;
+
 	struct ifi_info* ifi = NULL;
 	struct ifi_info* ifihead = NULL;
 	u_char *ptr = NULL;
@@ -69,9 +71,11 @@ int main(int argc, char* argv[]){
 	struct sockaddr_in *subnet_mask_in;
 	int server_is_local = 0;
 
-	struct sockaddr IPclient;
-	struct sockaddr_in IPclient_addr_in;
+	struct sockaddr *IPclient_addr, *IPserver_addr;
+	struct sockaddr_in *IPclient_addr_in, *IPserver_addr_in;
 	
+	int sockfd; //socket fd for client
+
 	fp = fopen(argv[1], "r");	
 	
 	if (fp == NULL){
@@ -82,9 +86,17 @@ int main(int argc, char* argv[]){
 	while (fgets(read_file_line, len, fp) != NULL) {
 		printf("%s", read_file_line);
 		if(i == 0){
-			ret = inet_pton(AF_INET, read_file_line, &server_addr_in.sin_addr);
-			sa = (struct sockaddr*) &server_addr_in;
-			printf("server address from file is %s\n ", Sock_ntop_host(sa, sizeof(*sa)));
+		//	ret = inet_pton(AF_INET, read_file_line, &server_addr_in.sin_addr);
+		//	ret = inet_pton(AF_INET, read_file_line, &server_in_addr);
+		
+			inet_aton(read_file_line, &server_in_addr);
+			server_addr_in.sin_addr = server_in_addr;
+
+			IPserver_addr_in = (struct sockaddr_in*)malloc(sizeof(struct sockaddr_in));
+			IPserver_addr_in->sin_family = AF_INET;
+			IPserver_addr_in->sin_addr = server_in_addr;
+			IPserver_addr = (struct sockaddr*) IPserver_addr_in;
+			printf("server address from file is %s\n ", Sock_ntop_host(IPserver_addr, sizeof(IPserver_addr)));
 			if(ret == -1)
 				printf("Given IP address is not valid IPv4 address.\nProvide a valid IPv4 address\n");
 			printf("\n");
@@ -95,7 +107,6 @@ int main(int argc, char* argv[]){
 			server_port = atoi(read_file_line);
 		i++;
 	}
-
 
 	ifihead = get_ifi_info_plus(AF_INET, 1);
 	for( ifi = ifihead; ifi != NULL; ifi = ifi->ifi_next){
@@ -130,8 +141,6 @@ int main(int argc, char* argv[]){
 			printf("  destination addr: %s\n",
 		Sock_ntop_host(sa, sizeof(*sa)));
 
-//****printf("sa is : %s\n", Sock_ntop_host(sa, sizeof(*sa)) );	
-
 		if((sa = ifi->ifi_ntmaddr) != NULL)
 			printf("network mask: %s\n", Sock_ntop_host(sa, sizeof(*sa)));		
 			
@@ -148,10 +157,11 @@ int main(int argc, char* argv[]){
 		}
 	}
 	
+	IPclient_addr_in = (struct sockaddr_in*)malloc(sizeof(struct sockaddr_in));
 	//if server is loopback
 	if(server_is_loopback){
 	//	ret = inet_pton(AF_INET, loopback_str, &IPclient_addr_in.sin_addr);
-		ret = inet_pton(AF_INET, loopback_str, &IPclient_addr_in.sin_addr);
+		ret = inet_pton(AF_INET, loopback_str, &(IPclient_addr_in->sin_addr));
 	//	IPclient_addr_in = (struct sockaddr_in) IPclient;
 		printf("server is loopback\n");
 		if(ret == -1){
@@ -160,9 +170,10 @@ int main(int argc, char* argv[]){
 	}
 	else{
 		for( ifi = ifihead; ifi != NULL; ifi = ifi->ifi_next){
+			printf("\n");
 			if( (sa = ifi->ifi_addr) != NULL){
 				strcpy(client_str_addr, sock_ntop(sa, sizeof(*sa))); 
-			//	printf("client addr is %s\n",client_str_addr);
+				printf("client addr is %s\n", client_str_addr);
 				client_host_addr_in = (struct sockaddr_in*) sa;
 			}
 			
@@ -172,26 +183,56 @@ int main(int argc, char* argv[]){
 			}
 
 			if(on_same_subnet(server_addr_in, client_host_addr_in, subnet_mask_in)){
-				ret = inet_pton(AF_INET, client_str_addr, &(IPclient_addr_in.sin_addr));
+				ret = inet_pton(AF_INET, client_str_addr, &(IPclient_addr_in->sin_addr));
 				if(ret == -1){
 					printf("cannot set local client address\n");
 				}
 				printf("server is local\n");
+				client_addr = (struct sockaddr*) client_host_addr_in;
+				printf("client on same subnet is %s\n", sock_ntop(client_addr, sizeof(client_addr)));
 				server_is_local = 1;
+
+				IPclient_addr = (struct sockaddr*)IPclient_addr_in;
+				printf("IPclient on same subnet is %s\n", sock_ntop(IPclient_addr, sizeof(IPclient_addr)));
+			}
+			else{
+			
+				client_addr = (struct sockaddr*) client_host_addr_in;
+				printf("client not on same subnet is %s\n", sock_ntop(client_addr, sizeof(client_addr)));
 			}
 		}
 
 		if(!server_is_local){
 			sa = ifihead->ifi_next->ifi_addr;
 			strcpy(client_str_addr, sock_ntop(sa, sizeof(*sa))); 
-			ret = inet_pton(AF_INET, client_str_addr, &(IPclient_addr_in.sin_addr));
+			ret = inet_pton(AF_INET, client_str_addr, &(IPclient_addr_in->sin_addr));
 			if(ret == -1){
 				printf("cannot set arbitrary client address\n");
 			}
-			printf("server is kuch bhi\n");
+			printf("server is neither loopback nor local\n");
 		}
+				
+	}
+	
+	IPclient_addr = (struct sockaddr*)IPclient_addr_in;
+	printf("IPclient is %s\n", sock_ntop(IPclient_addr, sizeof(IPclient_addr)));
+	printf("IPserver is %s\n", sock_ntop(IPserver_addr, sizeof(IPserver_addr)));
+
+	sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+	if(sockfd == -1){
+		printf("cound not create client socket\n");
 	}
 
+	if( ( ret = bind(sockfd, IPclient_addr, sizeof(*IPclient_addr)) == -1)){
+		printf("Could not bind client IP address to socket\n");
+		close(sockfd);
+	}
+
+	if( ( ret = setsockopt(sockfd, SOL_SOCKET, SO_DONTROUTE, (void*)&on, sizeof(on) ) ) < 0 ){
+		printf("setsockopt failed\n");
+		close(sockfd);
+	}
+	
 	free_ifi_info_plus(ifihead);
 
 	fclose(fp);
