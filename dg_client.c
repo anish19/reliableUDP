@@ -97,6 +97,7 @@ int main(int argc, char* argv[]){
 			IPserver_addr_in = (struct sockaddr_in*)malloc(sizeof(struct sockaddr_in));
 			IPserver_addr_in->sin_family = AF_INET;
 			IPserver_addr_in->sin_addr = server_in_addr;
+			IPserver_addr_in->sin_port = 60810;
 			IPserver_addr = (struct sockaddr*) IPserver_addr_in;
 			printf("server address from file is %s\n ", Sock_ntop_host(IPserver_addr, sizeof(IPserver_addr)));
 			if(ret == -1)
@@ -227,22 +228,18 @@ int main(int argc, char* argv[]){
 
 	if( ( ret = bind(sockfd, IPclient_addr, sizeof(*IPclient_addr)) == -1)){
 		printf("Could not bind client IP address to socket\n");
-		close(sockfd);
 	}
 	if(server_is_loopback || server_is_local){
 		if( ( ret = setsockopt(sockfd, SOL_SOCKET, SO_DONTROUTE, (void*)&on, sizeof(on) ) ) < 0 ){
 			printf("setsockopt SO_DONTROUTE failed\n");
-			close(sockfd);
 		}
 		if( ( ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (void*)&on, sizeof(on) ) ) < 0 ){
 			printf("setsockopt SO_REUSEADDR failed\n");
-			close(sockfd);
 		}
 	}
 	else{
 		if( ( ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (void*)&on, sizeof(on) ) ) < 0 ){
 			printf("setsockopt SO_REUSEADDR failed\n");
-			close(sockfd);
 		}
 	}
 
@@ -256,10 +253,17 @@ int main(int argc, char* argv[]){
 	printf("local addr len is %d\n", local_addr_len);
 	printf("The local client address after binding to fd is %s\n", sock_ntop(local_addr, sizeof(local_addr)) );
 
-		
-
 	free_ifi_info_plus(ifihead);
 
+	//connect to server
+	if( (ret = connect(sockfd, IPserver_addr, sizeof(IPserver_addr)) ) < 0 ){
+		printf("connect to server failed\n");	
+	}
+
+
+
+//close fp and free read_file_line earlier
+	close(sockfd);
 	fclose(fp);
 	if (read_file_line)
 		free(read_file_line);
