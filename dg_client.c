@@ -88,7 +88,7 @@ int main(int argc, char* argv[]){
 
 	char *buf = NULL;
 	int buf_len = 0;
-	char buf_str[16] = "random text";
+	char buf_str[] = "random text from the client...";
 
 	fp = fopen(argv[1], "r");	
 	
@@ -290,7 +290,7 @@ int main(int argc, char* argv[]){
 	}
 
 	buf_len = strlen(buf_str);
-	buf = (char*) malloc(sizeof(char)*buf_len);
+//	buf = (char*) malloc(sizeof(char)*buf_len);
 
 //	ret = dg_cli_echo(sockfd,(void*) buf, buf_len, IPserver_addr);
 //	ret = sendto( sockfd, buf_str, buf_len, 0, IPserver_addr, sizeof(IPserver_addr));

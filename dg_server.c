@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "unp.h"
 #include "unpthread.h"
 #include "unpifiplus.h"
@@ -153,17 +154,15 @@ printf("no of inter = %d\n", no_of_interface);
 		for(idx = 0; idx < no_of_interface; idx++){
 			if(FD_ISSET(server_info_list[idx].sockfd, &rset )){
 
-				printf("msg revd from client\n");
 				recvfrom_addr = (struct sockaddr*) malloc(sizeof(struct sockaddr));
-//				ret = recvfrom( server_info_list[idx].sockfd, (void*)buf, buf_len, 0, recvfrom_addr, &recvfrom_len);
-				ret = recv( server_info_list[idx].sockfd, buf, buf_len, 0);
-				for(i = 0; i < buf_len; i++){
-					buf_str[i] = (char*)buf;
-					buf++;
-				}
-				buf_str[buf_len] = '\0';
-				printf("Message from client:\n %s\n", buf_str);
-
+				ret = recvfrom( server_info_list[idx].sockfd, buf_str, 64, 0, recvfrom_addr, &recvfrom_len);
+//				ret = recv( server_info_list[idx].sockfd, buf, buf_len, 0);
+				buf_len = strlen(buf_str);
+				printf("buf_len is %d\n",buf_len);
+				buf_str[ret-1] = '\0';
+				printf("Message from client is:\n");
+				printf("%s\n", buf_str);
+				
 			}
 		}
 	}
