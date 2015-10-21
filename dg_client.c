@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "unp.h"
 #include "unpthread.h"
 #include "unpifiplus.h"
@@ -33,6 +34,13 @@ int on_same_subnet(char server[15], char client[15], char nmsk_str[15]){
 	for(i = 0; i < network_len; i++)
 }
 */
+
+int dg_cli_echo(int sockfd, const void* buf, int buf_len, struct sockaddr *server){
+	Sendto(sockfd, buf, 16, 0, server, sizeof(server));
+	return 1;
+}
+
+
 int on_same_subnet( struct sockaddr_in server_addr_in, struct sockaddr_in* client_addr_in, struct sockaddr_in* mask){
 	uint32_t client_addr = htonl(client_addr_in->sin_addr.s_addr);
 	uint32_t server_addr = htonl(server_addr_in.sin_addr.s_addr);
@@ -77,6 +85,10 @@ int main(int argc, char* argv[]){
 	int sockfd; //socket fd for client
 	struct sockaddr *local_addr = NULL;
 	int local_addr_len = 0;
+
+	char *buf = NULL;
+	int buf_len = 0;
+	char buf_str[16] = "random text";
 
 	fp = fopen(argv[1], "r");	
 	
@@ -161,12 +173,27 @@ int main(int argc, char* argv[]){
 	}
 	
 	IPclient_addr_in = (struct sockaddr_in*)malloc(sizeof(struct sockaddr_in));
+/********************************************************/
+/********************************************************/
+/********************************************************/
+/********************************************************/
+/********************************************************/
+/********************************************************/
+/***************************SET LOOPBACK IP**************/
+/********************************************************/
+/********************************************************/
+/********************************************************/
+/********************************************************/
+/********************************************************/
+/********************************************************/
+/********************************************************/
+/********************************************************/
 	//if server is loopback
 	if(server_is_loopback){
 	//	ret = inet_pton(AF_INET, loopback_str, &IPclient_addr_in.sin_addr);
 		ret = inet_pton(AF_INET, loopback_str, &(IPclient_addr_in->sin_addr));
 	//	IPclient_addr_in = (struct sockaddr_in) IPclient;
-		printf("server is loopback\n");
+		printf("server is loopback.\n");
 		if(ret == -1){
 			printf("cannot set loopback client address\n");
 		}
@@ -249,20 +276,37 @@ int main(int argc, char* argv[]){
 		printf("getsockname failed\n");
 		close(sockfd);
 	}
-	printf("ret is %d\n", ret);
 	printf("local addr len is %d\n", local_addr_len);
 	printf("The local client address after binding to fd is %s\n", sock_ntop(local_addr, sizeof(local_addr)) );
 
 	free_ifi_info_plus(ifihead);
 
+	printf("sockfd is %d\n",sockfd);
+	printf("IPserver is %s\n", Sock_ntop_host(IPserver_addr, sizeof(struct sockaddr)));
+
 	//connect to server
-	if( (ret = connect(sockfd, IPserver_addr, sizeof(IPserver_addr)) ) < 0 ){
+	if( (ret = connect(sockfd, IPserver_addr, sizeof(*IPserver_addr)) ) < 0 ){
 		printf("connect to server failed\n");	
 	}
 
+	buf_len = strlen(buf_str);
+	buf = (char*) malloc(sizeof(char)*buf_len);
 
+//	ret = dg_cli_echo(sockfd,(void*) buf, buf_len, IPserver_addr);
+//	ret = sendto( sockfd, buf_str, buf_len, 0, IPserver_addr, sizeof(IPserver_addr));
 
-//close fp and free read_file_line earlier
+	ret = send( sockfd, buf_str, buf_len, 0);	
+
+	if( ret == -1){
+		printf("sendto failed\n ");
+	}
+	else if (ret < buf_len){
+		printf("sendto only sent %d bytes\n", ret);
+	}
+
+	printf("end of process\n");
+
+	//close fp and free read_file_line earlier
 	close(sockfd);
 	fclose(fp);
 	if (read_file_line)

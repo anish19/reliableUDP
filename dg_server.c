@@ -3,6 +3,7 @@
 #include "unpthread.h"
 #include "unpifiplus.h"
 #include <stdlib.h>
+#include <sys/select.h>
 
 #define MAX_INTF 16
 
@@ -31,8 +32,17 @@ int main(int argc, char* argv[]){
 	int sockfd;
 	struct sockaddr *subnet_addr; 
 
-	char buf[16];
+	char buf_str[16];
+	void *buf = NULL;
+	int buf_len = 0;
+	int recvfrom_len = 0;
+	struct sockaddr *recvfrom_addr;
+
 	struct server_info server_info_list[MAX_INTF];
+
+
+	fd_set rset;
+	int maxfdp1, maxfd = -10000000;
 
 	fp = fopen(argv[1], "r");	
 	
@@ -74,10 +84,11 @@ int main(int argc, char* argv[]){
 		if ( (sa = ifi->ifi_addr) != NULL)
 			printf("  IP addr: %s\n", Sock_ntop_host (sa, sizeof (*sa)));
 
-
+		((struct sockaddr_in*)sa)->sin_port = 60810;
 		server_info_list[idx].IP_addr = (struct sockaddr*) malloc(sizeof(struct sockaddr));
 		server_info_list[idx].IP_addr = sa;
 
+		printf("port is %d\n", ((struct sockaddr_in*)server_info_list[idx].IP_addr)->sin_port);
 		/*creating scoket and binding every returned address to a socket*/
 		sockfd = socket(AF_INET, SOCK_DGRAM, 0);
 		if(sockfd == -1){
@@ -109,6 +120,7 @@ int main(int argc, char* argv[]){
 		server_addr_in = (struct sockaddr_in*) server_info_list[idx].IP_addr;
 		network_mask_in = (struct sockaddr_in*) server_info_list[idx].netmask;
 		
+		subnet_addr_in = (struct sockaddr_in*) malloc(sizeof(struct sockaddr_in));
 		subnet_addr_in->sin_addr.s_addr = server_addr_in->sin_addr.s_addr & network_mask_in->sin_addr.s_addr;
 		
 		server_info_list[idx].subnet_addr = (struct sockaddr*) malloc(sizeof(struct sockaddr));
@@ -120,10 +132,41 @@ int main(int argc, char* argv[]){
 		printf("\n");
 
 		idx++;
-		printf("\n--------------------------------\n");
+		no_of_interface++;
+		printf("\n--------------------------------%d\n", no_of_interface);
+
 	}
+printf("no of inter = %d\n", no_of_interface);	
 
+	//IO multiplexing for sockfd
+	FD_ZERO(&rset);
+	
+	for(;;){
+		for(idx = 0 ; idx < no_of_interface; idx++){
+			FD_SET(server_info_list[idx].sockfd, &rset);
+			if(sockfd > maxfd)
+				maxfd = sockfd;
+		}
 
+		maxfdp1 = maxfd + 1;
+		Select( maxfdp1, &rset, NULL, NULL, NULL);
+		for(idx = 0; idx < no_of_interface; idx++){
+			if(FD_ISSET(server_info_list[idx].sockfd, &rset )){
+
+				printf("msg revd from client\n");
+				recvfrom_addr = (struct sockaddr*) malloc(sizeof(struct sockaddr));
+//				ret = recvfrom( server_info_list[idx].sockfd, (void*)buf, buf_len, 0, recvfrom_addr, &recvfrom_len);
+				ret = recv( server_info_list[idx].sockfd, buf, buf_len, 0);
+				for(i = 0; i < buf_len; i++){
+					buf_str[i] = (char*)buf;
+					buf++;
+				}
+				buf_str[buf_len] = '\0';
+				printf("Message from client:\n %s\n", buf_str);
+
+			}
+		}
+	}
 
 
 	fclose(fp);
@@ -132,3 +175,23 @@ int main(int argc, char* argv[]){
 	
 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
