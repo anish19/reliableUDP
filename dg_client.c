@@ -84,12 +84,21 @@ int main(int argc, char* argv[]){
 	
 	int sockfd; //socket fd for client
 	struct sockaddr *local_addr = NULL;
-	int local_addr_len = 0;
+	int local_addr_len = -1;
 
 	char *buf = NULL;
 	int buf_len = 0;
-	char buf_str[] = "random text from the client...";
+	char buf_str[] = "Hi server... ";
 
+	char requested_file_name[32];
+	int requested_file_name_len = 32;
+	
+	int new_server_port;
+	char new_server_port_str[16];
+	struct sockaddr *recvfrom_addr;
+	struct sockaddr_in *recvfrom_addr_in;
+	int recvfrom_len = -1;
+	
 	fp = fopen(argv[1], "r");	
 	
 	if (fp == NULL){
@@ -98,8 +107,9 @@ int main(int argc, char* argv[]){
 	}
 
 	while (fgets(read_file_line, len, fp) != NULL) {
-		printf("%s", read_file_line);
+//		printf("%s", read_file_line);
 		if(i == 0){
+			printf(" i = 0 is %d", i);
 		//	ret = inet_pton(AF_INET, read_file_line, &server_addr_in.sin_addr);
 		//	ret = inet_pton(AF_INET, read_file_line, &server_in_addr);
 		
@@ -117,11 +127,23 @@ int main(int argc, char* argv[]){
 			printf("\n");
 			for(i=0; i < 16; i++)
 				server_str_addr[i] = read_file_line[i];
+			i = 0;
 		}
 		if(i == 1)
 			server_port = atoi(read_file_line);
+
+		if(i == 2){
+			printf("i = 2\n");
+			//requested_file_name = (char*) malloc(requested_file_name_len);
+			for(i = 0; i < 32; i++){
+				requested_file_name[i] = read_file_line[i];
+			}
+			i = 0;
+		}
 		i++;
+		
 	}
+	printf("File to be requested for is %s\n", requested_file_name);
 
 	ifihead = get_ifi_info_plus(AF_INET, 1);
 	for( ifi = ifihead; ifi != NULL; ifi = ifi->ifi_next){
@@ -293,9 +315,9 @@ int main(int argc, char* argv[]){
 //	buf = (char*) malloc(sizeof(char)*buf_len);
 
 //	ret = dg_cli_echo(sockfd,(void*) buf, buf_len, IPserver_addr);
-//	ret = sendto( sockfd, buf_str, buf_len, 0, IPserver_addr, sizeof(IPserver_addr));
+//	ret = sendto( sockfd, buf_str, buf_len, 0, IPserver_addr, sizeof(*IPserver_addr));
 
-	ret = send( sockfd, buf_str, buf_len, 0);	
+	ret = send( sockfd, requested_file_name, requested_file_name_len, 0);	
 
 	if( ret == -1){
 		printf("sendto failed\n ");
@@ -304,6 +326,27 @@ int main(int argc, char* argv[]){
 		printf("sendto only sent %d bytes\n", ret);
 	}
 
+	ret = -1;
+	while(1){
+		ret = recv( sockfd, new_server_port_str, 16, 0);
+		if(ret > -1)
+			break;
+	}
+
+	new_server_port = atoi(new_server_port_str);
+	printf("new server port is %d\n", new_server_port);	
+	recvfrom_addr = (struct sockaddr*) malloc(sizeof(struct sockaddr));
+	memcpy(recvfrom_addr, IPserver_addr, 16);
+	recvfrom_addr_in = (struct sockaddr_in*) recvfrom_addr;
+	recvfrom_addr_in->sin_port = htons(new_server_port);
+	recvfrom_addr = (struct sockaddr*)recvfrom_addr_in;
+	
+	if( (ret = connect( sockfd, recvfrom_addr, sizeof(*recvfrom_addr)) ) == 0){
+		printf("new connect successful\n");
+		Send( sockfd, buf_str, buf_len, 0); 
+	}
+	else
+		printf("new connect failed\n");
 	printf("end of process\n");
 
 	//close fp and free read_file_line earlier

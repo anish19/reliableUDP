@@ -33,17 +33,24 @@ int main(int argc, char* argv[]){
 	int sockfd;
 	struct sockaddr *subnet_addr; 
 
-	char buf_str[16];
+	char buf_str[64];
 	void *buf = NULL;
 	int buf_len = 0;
-	int recvfrom_len = 0;
-	struct sockaddr *recvfrom_addr;
+	int recvfrom_len = -1;
+	struct sockaddr *recvfrom_addr = NULL;
 
 	struct server_info server_info_list[MAX_INTF];
 
-
 	fd_set rset;
 	int maxfdp1, maxfd = -10000000;
+
+	pid_t childpid;
+	int child_sockfd, child_port, child_server_addr_len = -1;
+	char child_port_str[16];
+	struct sockaddr *child_server_addr;
+	struct sockaddr_in *child_server_addr_in;
+
+
 
 	fp = fopen(argv[1], "r");	
 	
@@ -156,13 +163,58 @@ printf("no of inter = %d\n", no_of_interface);
 
 				recvfrom_addr = (struct sockaddr*) malloc(sizeof(struct sockaddr));
 				ret = recvfrom( server_info_list[idx].sockfd, buf_str, 64, 0, recvfrom_addr, &recvfrom_len);
-//				ret = recv( server_info_list[idx].sockfd, buf, buf_len, 0);
+
+				printf("Connection request recieved from %s\n", Sock_ntop_host(recvfrom_addr, recvfrom_len));
 				buf_len = strlen(buf_str);
-				printf("buf_len is %d\n",buf_len);
+//				printf("buf_len is %d\n",buf_len);
 				buf_str[ret-1] = '\0';
 				printf("Message from client is:\n");
 				printf("%s\n", buf_str);
+
+				if ( (childpid = Fork()) == 0 ){
+					
+					Connect(server_info_list[idx].sockfd, recvfrom_addr, recvfrom_len);
+					
+					for( i=0; i< no_of_interface; i++){
+						if(server_info_list[i].sockfd != server_info_list[idx].sockfd ){
+							Close(server_info_list[i].sockfd);
+							server_info_list[i].sockfd = -1;
+						}
+					}	
+					i=0;
+					child_sockfd = Socket(AF_INET, SOCK_DGRAM, 0);
 				
+					child_server_addr_in->sin_port = htons(0);
+					child_server_addr_in->sin_family = AF_INET;
+					child_server_addr_in->sin_addr.s_addr = ((struct sockaddr_in*)(server_info_list[idx].IP_addr))->sin_addr.s_addr;
+						
+					child_server_addr = (struct sockaddr*)child_server_addr_in;
+					Bind(child_sockfd, child_server_addr, sizeof(*child_server_addr));
+						
+						
+					if( (ret = getsockname(server_info_list[idx].sockfd, child_server_addr, &child_server_addr_len)) == -1){
+						printf("getsockname failed\n");
+					}
+	
+	
+					child_port = ((struct sockaddr_in*)child_server_addr)->sin_port;
+					
+					sprintf( child_port_str, "%d", child_port);
+	
+					printf("new port is %d\n", child_port);
+					Send( server_info_list[idx].sockfd, child_port_str, 16, 0);
+						
+					ret = -1;
+					while(1){
+						ret = recv( server_info_list[idx].sockfd, buf_str, 64, 0);
+						if(ret >-1)
+							break;
+					}
+
+					printf("client said %s\n", buf_str);
+				}
+				
+
 			}
 		}
 	}
