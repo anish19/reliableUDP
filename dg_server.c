@@ -50,7 +50,11 @@ int main(int argc, char* argv[]){
 	struct sockaddr *child_server_addr;
 	struct sockaddr_in *child_server_addr_in;
 
+	char requested_file_name[32];
+	int requested_file_name_len;
 
+	char file_data[512];
+	int file_data_size = 512;
 
 	fp = fopen(argv[1], "r");	
 	
@@ -192,7 +196,7 @@ printf("no of inter = %d\n", no_of_interface);
 					Bind(child_sockfd, child_server_addr, sizeof(*child_server_addr));
 						
 						
-					if( (ret = getsockname(server_info_list[idx].sockfd, child_server_addr, &child_server_addr_len)) == -1){
+					if( (ret = getsockname(child_sockfd, child_server_addr, &child_server_addr_len)) == -1){
 						printf("getsockname failed\n");
 					}
 	
@@ -200,18 +204,53 @@ printf("no of inter = %d\n", no_of_interface);
 					child_port = ((struct sockaddr_in*)child_server_addr)->sin_port;
 					
 					sprintf( child_port_str, "%d", child_port);
-	
+
 					printf("new port is %d\n", child_port);
 					Send( server_info_list[idx].sockfd, child_port_str, 16, 0);
-						
+					
+					Connect( child_sockfd, recvfrom_addr, recvfrom_len);
+
 					ret = -1;
 					while(1){
-						ret = recv( server_info_list[idx].sockfd, buf_str, 64, 0);
+						ret = recv( child_sockfd, requested_file_name, 32, 0);
 						if(ret >-1)
 							break;
 					}
 
-					printf("client said %s\n", buf_str);
+					printf("Name of file requested is: %s\n", requested_file_name);
+
+					for(i = 0 ; i< strlen(requested_file_name); i++){
+					
+						printf("%d : %c\n", i , requested_file_name[i]);
+					}
+					requested_file_name[i-1] = '\0';
+					
+					printf("Name of file requested is: %s\n", requested_file_name);
+					/**Sending file**/
+					FILE *fpr;
+					
+					fpr = fopen( requested_file_name, "rb");
+					if( fpr == NULL){
+						printf("File named %s doesn't exist on server\n", requested_file_name);
+						printf("%s\n", strerror(errno));
+						exit(1);
+					}
+				
+					printf("Sending file to client...\n");
+
+//while( fgets( file_data, file_data_size, fpr) != NULL){
+					while( fread( (void*)file_data, sizeof(char),512 , fpr) ){
+						
+						printf("segment is %s\n", file_data);
+						
+						Send( child_sockfd, file_data, file_data_size, 0);
+						if(ret == 0 )
+							break;
+					}
+					printf("file sent\n");
+
+
+
 				}
 				
 

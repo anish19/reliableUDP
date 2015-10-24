@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "unp.h"
 #include "unpthread.h"
 #include "unpifiplus.h"
@@ -90,14 +91,18 @@ int main(int argc, char* argv[]){
 	int buf_len = 0;
 	char buf_str[] = "Hi server... ";
 
-	char requested_file_name[32];
-	int requested_file_name_len = 32;
-	
 	int new_server_port;
 	char new_server_port_str[16];
 	struct sockaddr *recvfrom_addr;
 	struct sockaddr_in *recvfrom_addr_in;
 	int recvfrom_len = -1;
+
+	char file_data[512];
+	char requested_file_name[32];
+	int requested_file_name_len = 32;
+	FILE *fpw;
+
+	char write_file_name[16];
 	
 	fp = fopen(argv[1], "r");	
 	
@@ -343,10 +348,83 @@ int main(int argc, char* argv[]){
 	
 	if( (ret = connect( sockfd, recvfrom_addr, sizeof(*recvfrom_addr)) ) == 0){
 		printf("new connect successful\n");
-		Send( sockfd, buf_str, buf_len, 0); 
+		Send( sockfd, requested_file_name, requested_file_name_len, 0); 
+		printf("Request for file sent to server\n");
 	}
 	else
 		printf("new connect failed\n");
+
+	printf("Recieving file from server...\n");
+	
+//	time_t mytime;
+//	mytime = time(NULL);
+//	sprintf( write_file_name,"%s",ctime(&mytime));
+//	write_file_name[16] = '\0';
+//	for( i = 0 ; i < 32; i++){
+//		if(requested_file_name[i] == '\0')
+//			break;
+//		write_file_name[i] = ; 
+
+//	}
+
+	write_file_name[0] = 'o';
+	write_file_name[1] = 'u';
+	write_file_name[2] = 't';
+	write_file_name[3] = 'p';
+	write_file_name[4] = 'u';
+	write_file_name[5] = 'u';
+	write_file_name[6] = '\0';
+
+	//opening file for writing
+	fpw = fopen( write_file_name, "wb");
+	if(fpw == NULL ){
+		printf("Unable to access file for writing\n");
+	}
+	
+	//waiting for first segment of 512 bytes
+	while(1){
+		ret = recv( sockfd, file_data, 512, 0);
+		printf("recieving\n");
+		if(ret > -1){
+			break;
+		}
+	}
+	//writing the first segment
+	printf("Segment 1 of file is:\n%s\n", file_data );
+	ret = fwrite( file_data, sizeof(char), sizeof(file_data)/sizeof(char), fpw);
+//ret = fputs(file_data, fpw);
+	printf("return from fwrite is %d\n", ret);
+	//fclose(fpw);	
+	fflush(fpw);
+	int seg_no = 2;
+
+	//setting socket to non blocking
+	int flags;
+
+	if( ( flags = fcntl (sockfd, F_GETFL, 0)) <0)
+		err_sys("F_GETFL error");
+	flags |= O_NONBLOCK;
+	if ( fcntl(sockfd,F_SETFL, flags ) < 0)
+		err_sys("F_SETFL error");
+
+	//reading further segments
+	while( recv(sockfd, file_data, 512, 0) > 0  ){
+		printf("Segment %d of file is:\n %s\n", seg_no ,file_data );
+		
+		//ret = fputs(file_data, fpw);
+		
+		ret = fwrite(file_data, sizeof(char), sizeof(file_data)/sizeof(char), fpw);
+		printf("%d: %d\n", seg_no, ret);
+		fflush(fpw);
+		if(ret == EOF)
+			break;
+
+		seg_no++;
+	}
+	
+	printf("---------------------\n");
+	printf("File %s has been written on %s\n", requested_file_name, write_file_name);
+
 	printf("end of process\n");
 
 	//close fp and free read_file_line earlier
