@@ -53,8 +53,8 @@ int main(int argc, char* argv[]){
 	char requested_file_name[32];
 	int requested_file_name_len;
 
-	char file_data[512];
-	int file_data_size = 512;
+	char file_data[512], file_size_str[15];
+	int file_data_size = 512, file_size;
 
 	fp = fopen(argv[1], "r");	
 	
@@ -237,6 +237,15 @@ printf("no of inter = %d\n", no_of_interface);
 					}
 				
 					printf("Sending file to client...\n");
+
+					fseek(fpr, 0L, SEEK_END);
+					file_size = ftell(fpr);
+					fseek(fpr, 0L, SEEK_SET);
+
+					sprintf( file_size_str, "%d", file_size);
+					
+					//sending file size
+					Send( child_sockfd, file_size_str, strlen(file_size_str), 0);
 
 //while( fgets( file_data, file_data_size, fpr) != NULL){
 					while( fread( (void*)file_data, sizeof(char),512 , fpr) ){

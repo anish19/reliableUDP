@@ -98,8 +98,8 @@ int main(int argc, char* argv[]){
 	int recvfrom_len = -1;
 
 	char file_data[512];
-	char requested_file_name[32];
-	int requested_file_name_len = 32;
+	char requested_file_name[32], file_size_str[15];
+	int requested_file_name_len = 32, file_size, payload_size;
 	FILE *fpw;
 
 	char write_file_name[16];
@@ -354,6 +354,13 @@ int main(int argc, char* argv[]){
 	else
 		printf("new connect failed\n");
 
+	Recv( sockfd, file_size_str, 15, 0);
+	file_size = atoi(file_size_str);
+	printf("The size of file to recv is: %d", file_size);
+
+	
+
+/*
 	printf("Recieving file from server...\n");
 	
 //	time_t mytime;
@@ -424,7 +431,7 @@ int main(int argc, char* argv[]){
 	
 	printf("---------------------\n");
 	printf("File %s has been written on %s\n", requested_file_name, write_file_name);
-
+*/
 	printf("end of process\n");
 
 	//close fp and free read_file_line earlier
