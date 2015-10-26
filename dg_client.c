@@ -4,41 +4,88 @@
 #include "unp.h"
 #include "unpthread.h"
 #include "unpifiplus.h"
+#include "dg_hdr.h"
 #include <stdlib.h>
 #include <string.h>
+#include "unprtt.h"
+#include <setjmp.h>
 //#include <netinet/in.h>
+#define PAYLOAD_SIZE 512
 
-/*
-int on_same_subnet(char server[15], char client[15], char nmsk_str[15]){
-	int network_len = 0, count =0;
-	int nmsk[4];
-	char temp[3];
-	int i=0, j=0;
+static struct rtt_info rttinfo;
+static int rttinit = 0;
+static struct msghdr msgsend, msgrecv;
+static struct dg_hdr sendhdr, recvhdr;
+static void sig_alrm(int signo);
+static sigjmp_buf jmpbuf;
 
-	for(i = 0; i < 4 ; i++){
-		for(j = 0; j < 3 ; j++){
-			temp[j] = nmsk_str[4*i+j];
-		}
-		nmsk[i] = atoi(temp);
-	}
-
-	for(i=0; i<4 ;i++){
-		count = 0;
-		nmsk[i] = nmsk[i] << 24;
-		while( nmsk[i] != 0 ){
-			nmsk[i]<<1;
-			count++;
-		}
-		network_len+=count;
+int dg_recv_packet( int fd, struct sockaddr* server_addr, char data[]){
+	
+	struct iovec iovsend[1], iovrecv[2];
+	int n;
+	if(rttinit == 0){
+		rtt_init(&rttinfo);
+		rttinit = 1;
+		rtt_d_flag = 1;
 	}
 	
-	for(i = 0; i < network_len; i++)
-}
-*/
+	iovrecv[0].iov_base = (void*)&recvhdr;
+	iovrecv[0].iov_len = sizeof(struct dg_hdr);
+	iovrecv[1].iov_base = data;
+	iovrecv[1].iov_len = PAYLOAD_SIZE;
+	msgrecv.msg_iov = iovrecv;
+	msgrecv.msg_iovlen = 2;
 
-int dg_cli_echo(int sockfd, const void* buf, int buf_len, struct sockaddr *server){
-	Sendto(sockfd, buf, 16, 0, server, sizeof(server));
-	return 1;
+	do{
+		printf("in recv msg\n");
+		n = Recvmsg(fd, &msgrecv, 0);
+	}while( n < sizeof(struct dg_hdr));
+
+	sendhdr.seq = recvhdr.seq + 1;
+	//msgsend.msg_name = server_addr;                 //try with out setting client address
+	msgsend.msg_namelen = sizeof(*server_addr);
+	iovsend[0].iov_base = (void*)&sendhdr;
+	iovsend[0].iov_len = sizeof(struct dg_hdr);
+	msgsend.msg_iov = iovsend;
+	msgsend.msg_iovlen = 1;
+ 
+	Sendmsg(fd, &msgsend, 0);
+	printf( "Msg with seq no %d is:\n %s\n", recvhdr.seq ,iovrecv[1].iov_base);
+	printf("header of ack for seqno %d is:%d\n", recvhdr.seq, sendhdr.seq);
+	return (n-sizeof(struct dg_hdr));
+}
+
+void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr,int file_size){
+
+	char file_data[PAYLOAD_SIZE];
+	int written_ctr = 0, ctr = 0 , n=0, recv_data_size;
+	int no_cwr;		//no of complete write reqd, 
+	int last_write_size;			//bytes_written_in_last_write;
+	
+	no_cwr = file_size/PAYLOAD_SIZE;
+	last_write_size = file_size - (no_cwr*PAYLOAD_SIZE);
+	
+	while(1){
+		recv_data_size = dg_recv_packet( sockfd, server_addr, file_data);
+		if(recv_data_size <= 0){
+			break;
+		}
+
+		n  = fwrite( file_data, sizeof(char), sizeof(file_data)/sizeof(char), fp);
+	
+		ctr++;
+		if(ctr == no_cwr)
+			break;
+	//	written_ctr += n;
+	//	if(written_ctr >= file_size)
+	//		break;
+	}
+	
+	recv_data_size = dg_recv_packet( sockfd, server_addr, file_data);
+	file_data[last_write_size] = '\0';
+	n  = fwrite( file_data, sizeof(char), last_write_size/sizeof(char), fp);
+
+
 }
 
 
@@ -97,7 +144,7 @@ int main(int argc, char* argv[]){
 	struct sockaddr_in *recvfrom_addr_in;
 	int recvfrom_len = -1;
 
-	char file_data[512];
+//	char file_data[512];
 	char requested_file_name[32], file_size_str[15];
 	int requested_file_name_len = 32, file_size, payload_size;
 	FILE *fpw;
@@ -346,6 +393,8 @@ int main(int argc, char* argv[]){
 	recvfrom_addr_in->sin_port = htons(new_server_port);
 	recvfrom_addr = (struct sockaddr*)recvfrom_addr_in;
 	
+
+	//connect to new server port
 	if( (ret = connect( sockfd, recvfrom_addr, sizeof(*recvfrom_addr)) ) == 0){
 		printf("new connect successful\n");
 		Send( sockfd, requested_file_name, requested_file_name_len, 0); 
@@ -356,12 +405,10 @@ int main(int argc, char* argv[]){
 
 	Recv( sockfd, file_size_str, 15, 0);
 	file_size = atoi(file_size_str);
-	printf("The size of file to recv is: %d", file_size);
-
+	printf("The size of file to recv is: %d\n", file_size);
 	
-
-/*
-	printf("Recieving file from server...\n");
+	
+//	printf("Recieving file from server...\n");
 	
 //	time_t mytime;
 //	mytime = time(NULL);
@@ -387,7 +434,12 @@ int main(int argc, char* argv[]){
 	if(fpw == NULL ){
 		printf("Unable to access file for writing\n");
 	}
-	
+
+	recv_file( fpw, sockfd, recvfrom_addr, file_size);
+
+//	dg_cli(fpw, sockfd, );
+
+/*	
 	//waiting for first segment of 512 bytes
 	while(1){
 		ret = recv( sockfd, file_data, 512, 0);
