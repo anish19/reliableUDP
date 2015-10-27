@@ -327,9 +327,9 @@ int main(int argc, char* argv[]){
 	}
 
 
-	if( ( ret = bind(sockfd, IPclient_addr, sizeof(*IPclient_addr)) == -1)){
-		printf("Could not bind client IP address to socket\n");
-	}
+//	if( ( ret = bind(sockfd, IPclient_addr, sizeof(*IPclient_addr)) == -1)){
+//		printf("Could not bind client IP address to socket\n");
+//	}
 	if(server_is_loopback || server_is_local){
 		if( ( ret = setsockopt(sockfd, SOL_SOCKET, SO_DONTROUTE, (void*)&on, sizeof(on) ) ) < 0 ){
 			printf("setsockopt SO_DONTROUTE failed\n");

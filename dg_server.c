@@ -6,6 +6,9 @@
 #include "dg_hdr.h"
 #include <stdlib.h>
 #include <sys/select.h>
+#include <sys/time.h>
+#include <signal.h>
+#include <unistd.h>
 #include "unprtt.h"
 #include <setjmp.h>
 
@@ -25,8 +28,8 @@ static struct msghdr msgsend, msgrecv;
 static struct dg_hdr sendhdr, recvhdr;
 static void sig_alrm(int signo);
 static sigjmp_buf jmpbuf;
-
-
+int client_window_size;
+/*
 int dg_send_packet( int fd, struct sockaddr* client_addr, char data[], int data_size ){
 	
 	struct iovec iovsend[2], iovrecv[1];
@@ -84,27 +87,151 @@ sendagain:
 	return (int) sendhdr.seq;
 
 }
+*/
 void sig_alrm(int signo)
 {
     siglongjmp(jmpbuf, 1);
 }
 
 
+struct buf_ele{
+	int seq;
+	int ts;
+	int ack;
+	char data[PAYLOAD_SIZE];
+};
 
-void send_file( FILE *fp, int sockfd, struct sockaddr* client_addr ){
+
+void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_addr ){
 	
 	char file_data[PAYLOAD_SIZE];
 	int file_data_read_size, file_data_size = PAYLOAD_SIZE, file_size, n;
 	sendhdr.seq = 0;
+	int interval, last_unack_pack=0;
+	struct itimerval it_val;
+	int max_window_size = client_window_size;
+	int file_buf_size = (file_size/PAYLOAD_SIZE) + 1;
+	struct buf_ele file_buf[file_buf_size];
+	
+	int curr_pos = 0, window_empty = max_mindow_size;
+	int idx = 0;
+	
+	
+
 	while(1){
-		file_data_read_size = fread( (void*)file_data, sizeof(char), PAYLOAD_SIZE , fp); 
-		printf("read size is %d\n\n", file_data_read_size);
-		if(file_data_read_size < 0)
-			break;
-		else if(file_data_read_size < PAYLOAD_SIZE)
-			file_data[file_data_read_size] = '\0';
-		n = dg_send_packet( sockfd, client_addr, file_data, file_data_read_size);
-	}
+	
+		while(window_empty){
+			file_data_read_size = fread( (void*)file_data, sizeof(char), PAYLOAD_SIZE , fp); 
+			printf("read size is %d\n\n", file_data_read_size);
+			if(file_data_read_size < 0)
+				break;
+			else if(file_data_read_size < PAYLOAD_SIZE)
+				file_data[file_data_read_size] = '\0';
+		//	n = dg_send_packet( sockfd, client_addr, file_data, file_data_read_size);
+		
+			struct iovec iovsend[2], iovrecv[1];
+			int ret, sent_bytes; 
+
+			if(rttinit == 0){
+				rtt_init(&rttinfo);
+				rttinit = 1;
+				rtt_d_flag = 1;
+			}
+
+			sendhdr.seq++;
+			file_buf[idx].seq = sendhdr.seq;
+			for(i = 0; i < PAYLOAD_SIZE; i++){
+				file_buf[idx].data[i] = file_data[i];
+			}
+			file_buf[idx].ts = sendhdr.ts;
+			file_buf[idx].ack = 0;
+			//idx++;
+
+			msgsend.msg_namelen = sizeof(*client_addr);
+			iovsend[0].iov_base = (void*)&sendhdr;
+			iovsend[0].iov_len = sizeof(struct dg_hdr);
+			iovsend[1].iov_base = file_data;
+			iovsend[1].iov_len = file_data_read_size;
+			msgsend.msg_iov = iovsend;
+			msgsend.msg_iovlen = 2;
+
+			msgrecv.msg_name = NULL;
+			msgrecv.msg_namelen = 0;
+			iovrecv[0].iov_base = (void*) &recvhdr;
+			iovrecv[0].iov_len = sizeof(struct dg_hdr);
+			msgrecv.msg_iov = iovrecv;
+			msgrecv.msg_iovlen = 1;
+			Signal(SIGALRM, sig_alrm);
+			rtt_newpack(&rttinfo);
+
+		sendagain:
+			sendhdr.ts = rtt_ts(&rttinfo);
+			sent_bytes = sendmsg(sockfd, &msgsend, 0);
+			last_unack_pack = sendhdr.seq;
+		
+			printf("%s\n", iovsend[1].iov_base);
+
+			if( sendhdr.seq == 1){
+				interval = rtt_start(&rttinfo);
+				it_val.it_value.tv_sec = interval/1000;
+				it_val.it_value.tv_usec = (interval*1000) % 1000000;   
+				it_val.it_interval = it_val.it_value;
+
+				if (setitimer(ITIMER_REAL, &it_val, NULL) == -1) {
+					perror("error calling setitimer()");
+					exit(1);
+				}
+			}
+
+			if (sigsetjmp(jmpbuf, 1) != 0) {
+				if (rtt_timeout(&rttinfo) < 0) {
+					err_msg("dg_send_packet: no response from client, giving up");
+					rttinit = 0;        
+					errno = ETIMEDOUT;
+					return;
+				}
+				goto sendagain;
+			}
+			
+			idx++;
+		}			
+		
+		do{
+			n = Recvmsg( sockfd, &msgrecv, 0);
+				
+			ack_seq = recvhdr.seq;
+			ack_ts = recvhdr.seq;
+			window_empty = recvhdr.window_empty;
+			
+			i = 0;
+			while(file_buf[i].seq != ack_seq-1 ){
+				i++;	
+			}
+			file_buf[i].ack = 1;
+			
+			
+			it_val.it_value.tv_sec = 0;
+			it_val.it_value.tv_usec = 0;   
+
+		//	if( sendhdr.seq == 1){
+
+			int offset;
+			offset = - recvhdr.ts;
+
+			interval = rtt_start(&rttinfo);
+			it_val.it_value.tv_sec = interval/1000;
+			it_val.it_value.tv_usec = (interval*1000) % 1000000;   
+			it_val.it_interval = it_val.it_value;
+
+			if (setitimer(ITIMER_REAL, &it_val, NULL) == -1) {
+				perror("error calling setitimer()");
+				exit(1);
+			}
+		//	}
+		} while ( n == sizeof(struct dg_hdr) && recvhdr.seq <= sendhdr.seq+1 );
+	
+	}	//alarm(0);
+	rtt_stop(&rttinfo, rtt_ts(&rttinfo) - recvhdr.ts);
 	
 
 }
@@ -341,7 +468,7 @@ printf("no of inter = %d\n", no_of_interface);
 					//sending file size
 					Send( child_sockfd, file_size_str, strlen(file_size_str), 0);
 		printf("child socket fd is %d\n", child_sockfd);			
-					send_file( fpr, child_sockfd, recvfrom_addr);
+					send_file( fpr, file_size, child_sockfd, recvfrom_addr);
 
 					printf("after sending file name\n");
 
