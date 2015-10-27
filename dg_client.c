@@ -10,7 +10,6 @@
 #include "unprtt.h"
 #include <setjmp.h>
 //#include <netinet/in.h>
-#define PAYLOAD_SIZE 512
 
 static struct rtt_info rttinfo;
 static int rttinit = 0;
@@ -19,43 +18,7 @@ static struct dg_hdr sendhdr, recvhdr;
 static void sig_alrm(int signo);
 static sigjmp_buf jmpbuf;
 int client_window_size = 5;
-/*
-int dg_recv_packet( int fd, struct sockaddr* server_addr, char data[]){
-	
-	struct iovec iovsend[1], iovrecv[2];
-	int n;
-	if(rttinit == 0){
-		rtt_init(&rttinfo);
-		rttinit = 1;
-		rtt_d_flag = 1;
-	}
-	
-	iovrecv[0].iov_base = (void*)&recvhdr;
-	iovrecv[0].iov_len = sizeof(struct dg_hdr);
-	iovrecv[1].iov_base = data;
-	iovrecv[1].iov_len = PAYLOAD_SIZE;
-	msgrecv.msg_iov = iovrecv;
-	msgrecv.msg_iovlen = 2;
 
-	do{
-		printf("in recv msg\n");
-		n = Recvmsg(fd, &msgrecv, 0);
-	}while( n < sizeof(struct dg_hdr));
-
-	sendhdr.seq = recvhdr.seq + 1;
-	//msgsend.msg_name = server_addr;                 //try with out setting client address
-	msgsend.msg_namelen = sizeof(*server_addr);
-	iovsend[0].iov_base = (void*)&sendhdr;
-	iovsend[0].iov_len = sizeof(struct dg_hdr);
-	msgsend.msg_iov = iovsend;
-	msgsend.msg_iovlen = 1;
- 
-	Sendmsg(fd, &msgsend, 0);
-	printf( "Msg with seq no %d is:\n %s\n", recvhdr.seq ,iovrecv[1].iov_base);
-	printf("header of ack for seqno %d is:%d\n", recvhdr.seq, sendhdr.seq);
-	return (n-sizeof(struct dg_hdr));
-}
-*/
 
 void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_size){
 
@@ -74,7 +37,6 @@ void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_si
 	int idx = 0, i=0, window_empty = max_window_size;
 	
 	while(1){
-	//	recv_data_size = dg_recv_packet( sockfd, server_addr, file_data);
 
 		if(rttinit == 0){
 			rtt_init(&rttinfo);
@@ -88,11 +50,8 @@ void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_si
 		iovrecv[1].iov_len = PAYLOAD_SIZE;
 		msgrecv.msg_iov = iovrecv;
 		msgrecv.msg_iovlen = 2;
-
-		//do{
 	
 		n = Recvmsg(sockfd, &msgrecv, 0);
-		//}while( n < sizeof(struct dg_hdr));
 		
 		file_buf[idx].drop = 0;
 		
@@ -131,7 +90,6 @@ void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_si
 		
 		sendhdr.ts = recvhdr.ts;
 		sendhdr.window_empty = window_empty--;
-		//msgsend.msg_name = server_addr;                 //try with out setting client address
 		msgsend.msg_namelen = sizeof(*server_addr);
 		iovsend[0].iov_base = (void*)&sendhdr;
 		iovsend[0].iov_len = sizeof(struct dg_hdr);
@@ -143,7 +101,6 @@ void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_si
 		printf( "Msg with seq no %d is:\n %s\n", recvhdr.seq ,iovrecv[1].iov_base);
 		printf("header of ack for seqno %d is:%d\n", recvhdr.seq, sendhdr.seq);
 		window_empty++;
-		//return (n-sizeof(struct dg_hdr));
 		idx++;
 
 		if(file_buf[file_buf_size].ack == 1)
@@ -247,9 +204,7 @@ int main(int argc, char* argv[]){
 //		printf("%s", read_file_line);
 		if(i == 0){
 			printf(" i = 0 is %d", i);
-		//	ret = inet_pton(AF_INET, read_file_line, &server_addr_in.sin_addr);
-		//	ret = inet_pton(AF_INET, read_file_line, &server_in_addr);
-		
+
 			inet_aton(read_file_line, &server_in_addr);
 			server_addr_in.sin_addr = server_in_addr;
 
@@ -449,10 +404,6 @@ int main(int argc, char* argv[]){
 	}
 
 	buf_len = strlen(buf_str);
-//	buf = (char*) malloc(sizeof(char)*buf_len);
-
-//	ret = dg_cli_echo(sockfd,(void*) buf, buf_len, IPserver_addr);
-//	ret = sendto( sockfd, buf_str, buf_len, 0, IPserver_addr, sizeof(*IPserver_addr));
 
 	ret = send( sockfd, requested_file_name, requested_file_name_len, 0);	
 
@@ -522,53 +473,6 @@ int main(int argc, char* argv[]){
 
 	recv_file( fpw, sockfd, recvfrom_addr, file_size);
 
-//	dg_cli(fpw, sockfd, );
-
-/*	
-	//waiting for first segment of 512 bytes
-	while(1){
-		ret = recv( sockfd, file_data, 512, 0);
-		printf("recieving\n");
-		if(ret > -1){
-			break;
-		}
-	}
-	//writing the first segment
-	printf("Segment 1 of file is:\n%s\n", file_data );
-	ret = fwrite( file_data, sizeof(char), sizeof(file_data)/sizeof(char), fpw);
-//ret = fputs(file_data, fpw);
-	printf("return from fwrite is %d\n", ret);
-	//fclose(fpw);	
-	fflush(fpw);
-	int seg_no = 2;
-
-	//setting socket to non blocking
-	int flags;
-
-	if( ( flags = fcntl (sockfd, F_GETFL, 0)) <0)
-		err_sys("F_GETFL error");
-	flags |= O_NONBLOCK;
-	if ( fcntl(sockfd,F_SETFL, flags ) < 0)
-		err_sys("F_SETFL error");
-
-	//reading further segments
-	while( recv(sockfd, file_data, 512, 0) > 0  ){
-		printf("Segment %d of file is:\n %s\n", seg_no ,file_data );
-		
-		//ret = fputs(file_data, fpw);
-		
-		ret = fwrite(file_data, sizeof(char), sizeof(file_data)/sizeof(char), fpw);
-		printf("%d: %d\n", seg_no, ret);
-		fflush(fpw);
-		if(ret == EOF)
-			break;
-
-		seg_no++;
-	}
-	
-	printf("---------------------\n");
-	printf("File %s has been written on %s\n", requested_file_name, write_file_name);
-*/
 	printf("end of process\n");
 
 	//close fp and free read_file_line earlier

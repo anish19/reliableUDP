@@ -13,7 +13,6 @@
 #include <setjmp.h>
 
 #define MAX_INTF 16
-//#define PAYLOAD_SIZE 512
 
 struct server_info{
 	int sockfd;
@@ -29,65 +28,7 @@ static struct dg_hdr sendhdr, recvhdr;
 static void sig_alrm(int signo);
 static sigjmp_buf jmpbuf;
 int client_window_size = 5;
-/*
-int dg_send_packet( int fd, struct sockaddr* client_addr, char data[], int data_size ){
-	
-	struct iovec iovsend[2], iovrecv[1];
-	int ret, sent_bytes; 
 
-	if(rttinit == 0){
-		rtt_init(&rttinfo);
-		rttinit = 1;
-		rtt_d_flag = 1;
-	}
-	int n;
-
-	sendhdr.seq++;
-	//msgsend.msg_name = client_addr;			//try with out setting client address
-	msgsend.msg_namelen = sizeof(*client_addr);
-	iovsend[0].iov_base = (void*)&sendhdr;
-	iovsend[0].iov_len = sizeof(struct dg_hdr);
-	iovsend[1].iov_base = data;
-	iovsend[1].iov_len = data_size;
-	msgsend.msg_iov = iovsend;
-	msgsend.msg_iovlen = 2;
-
-	msgrecv.msg_name = NULL;
-	msgrecv.msg_namelen = 0;
-	iovrecv[0].iov_base = (void*) &recvhdr;
-	iovrecv[0].iov_len = sizeof(struct dg_hdr);
-	msgrecv.msg_iov = iovrecv;
-	msgrecv.msg_iovlen = 1;
-	Signal(SIGALRM, sig_alrm);
-	rtt_newpack(&rttinfo);
-
-sendagain:
-	sendhdr.ts = rtt_ts(&rttinfo);
-	sent_bytes = sendmsg(fd, &msgsend, 0);
-
-	printf("%s\n", iovsend[1].iov_base);
-
-	alarm(rtt_start(&rttinfo));
-	if (sigsetjmp(jmpbuf, 1) != 0) {
-		if (rtt_timeout(&rttinfo) < 0) {
-			err_msg("dg_send_packet: no response from client, giving up");
-			rttinit = 0;        
-			errno = ETIMEDOUT;
-			return (-1);
-		}
-		goto sendagain;
-	}
-	do{
-		n = Recvmsg( fd, &msgrecv, 0);
-	}while(n < sizeof(struct dg_hdr) || recvhdr.seq != sendhdr.seq+1);
-	
-	alarm(0);
-	rtt_stop(&rttinfo, rtt_ts(&rttinfo) - recvhdr.ts);
-
-	return (int) sendhdr.seq;
-
-}
-*/
 void sig_alrm(int signo)
 {
     siglongjmp(jmpbuf, 1);
@@ -127,7 +68,6 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 			}
 			else if(file_data_read_size < PAYLOAD_SIZE)
 				file_data[file_data_read_size] = '\0';
-		//	n = dg_send_packet( sockfd, client_addr, file_data, file_data_read_size);
 		
 			struct iovec iovsend[2], iovrecv[1];
 			int ret, sent_bytes; 
@@ -150,7 +90,6 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 
 			file_buf[idx].ts = sendhdr.ts;
 			file_buf[idx].ack = 0;
-			//idx++;
 
 			msgsend.msg_namelen = sizeof(*client_addr);
 			iovsend[0].iov_base = (void*)&sendhdr;
@@ -176,7 +115,6 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 				sent_bytes = sendmsg(sockfd, &msgsend, 0);
 			no_pack_sent_now++;
 			file_buf[idx].sent = 1;
-			//last_unack_pack = sendhdr.seq;
 		
 			printf("%s\n", iovsend[1].iov_base);
 
@@ -262,7 +200,7 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 		} while ( n == sizeof(struct dg_hdr) && ack_seq-1 < last_sent_seq_no );
 		
 		no_pack_sent_now = 0;
-	}	//alarm(0);
+	}
 	rtt_stop(&rttinfo, rtt_ts(&rttinfo) - recvhdr.ts);
 	
 
