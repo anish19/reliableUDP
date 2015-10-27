@@ -93,15 +93,6 @@ void sig_alrm(int signo)
     siglongjmp(jmpbuf, 1);
 }
 
-
-struct buf_ele{
-	int seq;
-	int ts;
-	int ack;
-	char data[PAYLOAD_SIZE];
-};
-
-
 void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_addr ){
 	
 	char file_data[PAYLOAD_SIZE];
@@ -115,16 +106,24 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 	
 	int curr_pos = 0, window_empty = max_mindow_size;
 	int idx = 0;
+	int no_pack_sent_now=0;
+	int complete_file_sent_flag = 0;
 	
-	
+	for (i = 0; i < ; ++i)
+	{
+		file_buf[i].sent = 0;
+	}
+	i=0;
 
-	while(1){
-	
-		while(window_empty){
+	while(!complete_file_sent_flag){
+		
+		while(no_pack_sent_now < window_empty && complete_file_sent_flag == 0){
+			
 			file_data_read_size = fread( (void*)file_data, sizeof(char), PAYLOAD_SIZE , fp); 
-			printf("read size is %d\n\n", file_data_read_size);
-			if(file_data_read_size < 0)
-				break;
+			//printf("read size is %d\n\n", file_data_read_size);
+			if(file_data_read_size < 0){
+				complete_file_sent_flag = 1;
+			}
 			else if(file_data_read_size < PAYLOAD_SIZE)
 				file_data[file_data_read_size] = '\0';
 		//	n = dg_send_packet( sockfd, client_addr, file_data, file_data_read_size);
@@ -140,9 +139,14 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 
 			sendhdr.seq++;
 			file_buf[idx].seq = sendhdr.seq;
-			for(i = 0; i < PAYLOAD_SIZE; i++){
+			file_buf[idx].data_size = file_data_read_size;
+			
+			for(i = 0; i < file_data_read_size; i++){
 				file_buf[idx].data[i] = file_data[i];
 			}
+			if(file_data_read_size < PAYLOAD_SIZE)
+				file_buf[idx].data[file_data_read_size] = file_data[file_data_read_size];
+
 			file_buf[idx].ts = sendhdr.ts;
 			file_buf[idx].ack = 0;
 			//idx++;
@@ -164,10 +168,14 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 			Signal(SIGALRM, sig_alrm);
 			rtt_newpack(&rttinfo);
 
-		sendagain:
 			sendhdr.ts = rtt_ts(&rttinfo);
-			sent_bytes = sendmsg(sockfd, &msgsend, 0);
-			last_unack_pack = sendhdr.seq;
+			file_buf[idx].ts = sendhdr.ts;
+
+			if(complete_file_sent_flag == 0)
+				sent_bytes = sendmsg(sockfd, &msgsend, 0);
+			no_pack_sent_now++;
+			file_buf[idx].sent = 1;
+			//last_unack_pack = sendhdr.seq;
 		
 			printf("%s\n", iovsend[1].iov_base);
 
@@ -184,15 +192,33 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 			}
 
 			if (sigsetjmp(jmpbuf, 1) != 0) {
+
+				//SEND unacked pack
+
+				//traverse all acked
+				i = 0;
+				while(file_buf[i].ack == 1 ){
+					i++;	
+				}
+				//send unacked
+				i++;
+				sendhdr.seq = file_buf[i].seq;
+				sendhdr.ts = file_buf[i].ts;
+				iovsend[1].iov_base = file_buf[i].data;
+				iovsend[1].iov_len = file_buf[i].data_size;
+				sent_bytes = sendmsg(sockfd, &msgsend, 0);
+				//no_pack_sent_now++;
+
 				if (rtt_timeout(&rttinfo) < 0) {
 					err_msg("dg_send_packet: no response from client, giving up");
 					rttinit = 0;        
 					errno = ETIMEDOUT;
 					return;
 				}
-				goto sendagain;
+
+				jmpbuf = 0;
+				break;
 			}
-			
 			idx++;
 		}			
 		
@@ -200,24 +226,19 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 			n = Recvmsg( sockfd, &msgrecv, 0);
 				
 			ack_seq = recvhdr.seq;
-			ack_ts = recvhdr.seq;
+			ack_ts = recvhdr.ts;
 			window_empty = recvhdr.window_empty;
-			
+			//fast retransimt
 			i = 0;
 			while(file_buf[i].seq != ack_seq-1 ){
-				i++;	
+				file_buf[i].ack = 1;
+				i++;
 			}
-			file_buf[i].ack = 1;
-			
-			
+			file_buf[i].ack == 1;
+
 			it_val.it_value.tv_sec = 0;
 			it_val.it_value.tv_usec = 0;   
-
-		//	if( sendhdr.seq == 1){
-
-			int offset;
-			offset = - recvhdr.ts;
-
+			
 			interval = rtt_start(&rttinfo);
 			it_val.it_value.tv_sec = interval/1000;
 			it_val.it_value.tv_usec = (interval*1000) % 1000000;   
@@ -227,9 +248,17 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 				perror("error calling setitimer()");
 				exit(1);
 			}
-		//	}
-		} while ( n == sizeof(struct dg_hdr) && recvhdr.seq <= sendhdr.seq+1 );
-	
+
+			//find the point till which packets are sent
+			i=0;
+			while(file_buf[i].sent){
+				i++;
+			}
+			last_sent_seq_no = file_buf[i-1].seq;
+
+		} while ( n == sizeof(struct dg_hdr) && ack_seq-1 < last_sent_seq_no );
+		
+		no_pack_sent_now = 0;
 	}	//alarm(0);
 	rtt_stop(&rttinfo, rtt_ts(&rttinfo) - recvhdr.ts);
 	

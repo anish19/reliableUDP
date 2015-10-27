@@ -19,6 +19,7 @@ static struct dg_hdr sendhdr, recvhdr;
 static void sig_alrm(int signo);
 static sigjmp_buf jmpbuf;
 
+/*
 int dg_recv_packet( int fd, struct sockaddr* server_addr, char data[]){
 	
 	struct iovec iovsend[1], iovrecv[2];
@@ -54,19 +55,104 @@ int dg_recv_packet( int fd, struct sockaddr* server_addr, char data[]){
 	printf("header of ack for seqno %d is:%d\n", recvhdr.seq, sendhdr.seq);
 	return (n-sizeof(struct dg_hdr));
 }
+*/
 
-void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr,int file_size){
+void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_size){
 
 	char file_data[PAYLOAD_SIZE];
 	int written_ctr = 0, ctr = 0 , n=0, recv_data_size;
 	int no_cwr;		//no of complete write reqd, 
 	int last_write_size;			//bytes_written_in_last_write;
-	
+	struct iovec iovsend[1], iovrecv[2];
+	int n;
+
+	int file_buf_size = (file_size/PAYLOAD_SIZE) + 1;
+	struct buf_ele file_buf[file_buf_size];
+		
 	no_cwr = file_size/PAYLOAD_SIZE;
 	last_write_size = file_size - (no_cwr*PAYLOAD_SIZE);
+	int max_window_size = client_window_size;
+	int idx = 0, window_empty = max_window_size;
 	
 	while(1){
-		recv_data_size = dg_recv_packet( sockfd, server_addr, file_data);
+	//	recv_data_size = dg_recv_packet( sockfd, server_addr, file_data);
+
+		if(rttinit == 0){
+			rtt_init(&rttinfo);
+			rttinit = 1;
+			rtt_d_flag = 1;
+		}
+		
+		iovrecv[0].iov_base = (void*)&recvhdr;
+		iovrecv[0].iov_len = sizeof(struct dg_hdr);
+		iovrecv[1].iov_base = data;
+		iovrecv[1].iov_len = PAYLOAD_SIZE;
+		msgrecv.msg_iov = iovrecv;
+		msgrecv.msg_iovlen = 2;
+
+		//do{
+	
+		n = Recvmsg(fd, &msgrecv, 0);
+		//}while( n < sizeof(struct dg_hdr));
+		
+		file_buf[idx].drop = 0;
+		
+		//drop here
+		//*********//
+		//file_buf[idx].drop = 1;
+
+		file_buf[idx].seq 			= 	recvhdr.seq;
+		file_buf[idx].ts  			= 	recvhdr.ts;
+		file_buf[idx].ack 			= 	0;	//ack not sent yet. will set to 1 when ack sent
+
+		//reading payload
+		i=0;
+		do{
+			file_buf[idx].data[i]	=	data[i];
+			if(data[i] == '\0')
+				break;
+			i++;
+		}while(i < PAYLOAD_SIZE)
+
+		i=0;
+		while(1){
+			
+			if( !file_buf[i].drop ){
+				if(i == idx){
+					sendhdr.seq = file_buf[i].seq + 1;
+					break;
+				}
+			}
+			else{
+				sendhdr.seq = file_buf[i].seq;
+				break;		
+			}
+			i++;
+		}
+		
+		sendhdr.ts = recvhdr.ts;
+		sendhdr.window_empty = window_empty--;
+		//msgsend.msg_name = server_addr;                 //try with out setting client address
+		msgsend.msg_namelen = sizeof(*server_addr);
+		iovsend[0].iov_base = (void*)&sendhdr;
+		iovsend[0].iov_len = sizeof(struct dg_hdr);
+		msgsend.msg_iov = iovsend;
+		msgsend.msg_iovlen = 1;
+	 
+		Sendmsg(fd, &msgsend, 0);
+		file_buf[idx].ack = 1;
+		printf( "Msg with seq no %d is:\n %s\n", recvhdr.seq ,iovrecv[1].iov_base);
+		printf("header of ack for seqno %d is:%d\n", recvhdr.seq, sendhdr.seq);
+		window_empty++;
+		//return (n-sizeof(struct dg_hdr));
+		idx++;
+
+		if(file_buf[file_buf_size].ack == 1)
+			break;
+	}
+
+
+/*
 		if(recv_data_size <= 0){
 			break;
 		}
@@ -84,7 +170,7 @@ void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr,int file_siz
 	recv_data_size = dg_recv_packet( sockfd, server_addr, file_data);
 	file_data[last_write_size] = '\0';
 	n  = fwrite( file_data, sizeof(char), last_write_size/sizeof(char), fp);
-
+*/
 
 }
 
