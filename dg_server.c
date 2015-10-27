@@ -13,7 +13,7 @@
 #include <setjmp.h>
 
 #define MAX_INTF 16
-#define PAYLOAD_SIZE 512
+//#define PAYLOAD_SIZE 512
 
 struct server_info{
 	int sockfd;
@@ -28,7 +28,7 @@ static struct msghdr msgsend, msgrecv;
 static struct dg_hdr sendhdr, recvhdr;
 static void sig_alrm(int signo);
 static sigjmp_buf jmpbuf;
-int client_window_size;
+int client_window_size = 5;
 /*
 int dg_send_packet( int fd, struct sockaddr* client_addr, char data[], int data_size ){
 	
@@ -96,7 +96,7 @@ void sig_alrm(int signo)
 void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_addr ){
 	
 	char file_data[PAYLOAD_SIZE];
-	int file_data_read_size, file_data_size = PAYLOAD_SIZE, file_size, n;
+	int file_data_read_size, file_data_size = PAYLOAD_SIZE, n;
 	sendhdr.seq = 0;
 	int interval, last_unack_pack=0;
 	struct itimerval it_val;
@@ -104,12 +104,13 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 	int file_buf_size = (file_size/PAYLOAD_SIZE) + 1;
 	struct buf_ele file_buf[file_buf_size];
 	
-	int curr_pos = 0, window_empty = max_mindow_size;
-	int idx = 0;
+	int curr_pos = 0, window_empty = max_window_size;
+	int idx = 0, i;
 	int no_pack_sent_now=0;
 	int complete_file_sent_flag = 0;
-	
-	for (i = 0; i < ; ++i)
+	int ack_ts, ack_seq, last_sent_seq_no;
+
+	for (i = 0; i < file_buf_size; ++i)
 	{
 		file_buf[i].sent = 0;
 	}
@@ -190,34 +191,36 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 					exit(1);
 				}
 			}
+			int go_inside =0;
+			if(go_inside == 1){
+				if (sigsetjmp(jmpbuf, 1) != 0) {
 
-			if (sigsetjmp(jmpbuf, 1) != 0) {
+					//SEND unacked pack
 
-				//SEND unacked pack
+					//traverse all acked
+					i = 0;
+					while(file_buf[i].ack == 1 ){
+						i++;	
+					}
+					//send unacked
+					i++;
+					sendhdr.seq = file_buf[i].seq;
+					sendhdr.ts = file_buf[i].ts;
+					iovsend[1].iov_base = file_buf[i].data;
+					iovsend[1].iov_len = file_buf[i].data_size;
+					sent_bytes = sendmsg(sockfd, &msgsend, 0);
+					//no_pack_sent_now++;
 
-				//traverse all acked
-				i = 0;
-				while(file_buf[i].ack == 1 ){
-					i++;	
+					if (rtt_timeout(&rttinfo) < 0) {
+						err_msg("dg_send_packet: no response from client, giving up");
+						rttinit = 0;        
+						errno = ETIMEDOUT;
+						return;
+					}
+
+					
+					break;
 				}
-				//send unacked
-				i++;
-				sendhdr.seq = file_buf[i].seq;
-				sendhdr.ts = file_buf[i].ts;
-				iovsend[1].iov_base = file_buf[i].data;
-				iovsend[1].iov_len = file_buf[i].data_size;
-				sent_bytes = sendmsg(sockfd, &msgsend, 0);
-				//no_pack_sent_now++;
-
-				if (rtt_timeout(&rttinfo) < 0) {
-					err_msg("dg_send_packet: no response from client, giving up");
-					rttinit = 0;        
-					errno = ETIMEDOUT;
-					return;
-				}
-
-				jmpbuf = 0;
-				break;
 			}
 			idx++;
 		}			

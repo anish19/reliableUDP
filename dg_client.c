@@ -18,7 +18,7 @@ static struct msghdr msgsend, msgrecv;
 static struct dg_hdr sendhdr, recvhdr;
 static void sig_alrm(int signo);
 static sigjmp_buf jmpbuf;
-
+int client_window_size = 5;
 /*
 int dg_recv_packet( int fd, struct sockaddr* server_addr, char data[]){
 	
@@ -64,7 +64,6 @@ void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_si
 	int no_cwr;		//no of complete write reqd, 
 	int last_write_size;			//bytes_written_in_last_write;
 	struct iovec iovsend[1], iovrecv[2];
-	int n;
 
 	int file_buf_size = (file_size/PAYLOAD_SIZE) + 1;
 	struct buf_ele file_buf[file_buf_size];
@@ -72,7 +71,7 @@ void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_si
 	no_cwr = file_size/PAYLOAD_SIZE;
 	last_write_size = file_size - (no_cwr*PAYLOAD_SIZE);
 	int max_window_size = client_window_size;
-	int idx = 0, window_empty = max_window_size;
+	int idx = 0, i=0, window_empty = max_window_size;
 	
 	while(1){
 	//	recv_data_size = dg_recv_packet( sockfd, server_addr, file_data);
@@ -85,14 +84,14 @@ void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_si
 		
 		iovrecv[0].iov_base = (void*)&recvhdr;
 		iovrecv[0].iov_len = sizeof(struct dg_hdr);
-		iovrecv[1].iov_base = data;
+		iovrecv[1].iov_base = file_data;
 		iovrecv[1].iov_len = PAYLOAD_SIZE;
 		msgrecv.msg_iov = iovrecv;
 		msgrecv.msg_iovlen = 2;
 
 		//do{
 	
-		n = Recvmsg(fd, &msgrecv, 0);
+		n = Recvmsg(sockfd, &msgrecv, 0);
 		//}while( n < sizeof(struct dg_hdr));
 		
 		file_buf[idx].drop = 0;
@@ -108,11 +107,11 @@ void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_si
 		//reading payload
 		i=0;
 		do{
-			file_buf[idx].data[i]	=	data[i];
-			if(data[i] == '\0')
+			file_buf[idx].data[i]	=	file_data[i];
+			if(file_data[i] == '\0')
 				break;
 			i++;
-		}while(i < PAYLOAD_SIZE)
+		}while(i < PAYLOAD_SIZE);
 
 		i=0;
 		while(1){
@@ -139,7 +138,7 @@ void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_si
 		msgsend.msg_iov = iovsend;
 		msgsend.msg_iovlen = 1;
 	 
-		Sendmsg(fd, &msgsend, 0);
+		Sendmsg(sockfd, &msgsend, 0);
 		file_buf[idx].ack = 1;
 		printf( "Msg with seq no %d is:\n %s\n", recvhdr.seq ,iovrecv[1].iov_base);
 		printf("header of ack for seqno %d is:%d\n", recvhdr.seq, sendhdr.seq);
@@ -413,9 +412,9 @@ int main(int argc, char* argv[]){
 	}
 
 
-//	if( ( ret = bind(sockfd, IPclient_addr, sizeof(*IPclient_addr)) == -1)){
-//		printf("Could not bind client IP address to socket\n");
-//	}
+	if( ( ret = bind(sockfd, IPclient_addr, sizeof(*IPclient_addr)) == -1)){
+		printf("Could not bind client IP address to socket\n");
+	}
 	if(server_is_loopback || server_is_local){
 		if( ( ret = setsockopt(sockfd, SOL_SOCKET, SO_DONTROUTE, (void*)&on, sizeof(on) ) ) < 0 ){
 			printf("setsockopt SO_DONTROUTE failed\n");
