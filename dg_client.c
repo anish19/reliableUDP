@@ -50,9 +50,9 @@ void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_si
 		iovrecv[1].iov_len = PAYLOAD_SIZE;
 		msgrecv.msg_iov = iovrecv;
 		msgrecv.msg_iovlen = 2;
-	
+	printf("\nwaiting to rcv %d\n", idx+1);
 		n = Recvmsg(sockfd, &msgrecv, 0);
-		
+	printf("\nrcvd some shit\n");	
 		file_buf[idx].drop = 0;
 		
 		//drop here

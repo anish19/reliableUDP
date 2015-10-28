@@ -63,12 +63,13 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 			
 			file_data_read_size = fread( (void*)file_data, sizeof(char), PAYLOAD_SIZE , fp); 
 			//printf("read size is %d\n\n", file_data_read_size);
-			if(file_data_read_size < 0){
+			printf("file_data_read_size is :%d\n PAYLOAD_SIZE :%d\n", file_data_read_size, PAYLOAD_SIZE);
+			
+			file_data[file_data_read_size] = '\0';
+			if(file_data_read_size < PAYLOAD_SIZE){
 				complete_file_sent_flag = 1;
+			
 			}
-			else if(file_data_read_size < PAYLOAD_SIZE)
-				file_data[file_data_read_size] = '\0';
-		
 			struct iovec iovsend[2], iovrecv[1];
 			int ret, sent_bytes; 
 
@@ -95,7 +96,7 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 			iovsend[0].iov_base = (void*)&sendhdr;
 			iovsend[0].iov_len = sizeof(struct dg_hdr);
 			iovsend[1].iov_base = file_data;
-			iovsend[1].iov_len = file_data_read_size;
+			iovsend[1].iov_len = PAYLOAD_SIZE;
 			msgsend.msg_iov = iovsend;
 			msgsend.msg_iovlen = 2;
 
@@ -111,10 +112,11 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 			sendhdr.ts = rtt_ts(&rttinfo);
 			file_buf[idx].ts = sendhdr.ts;
 
-			if(complete_file_sent_flag == 0)
-				sent_bytes = sendmsg(sockfd, &msgsend, 0);
+		//	if(complete_file_sent_flag == 0)
+			sent_bytes = sendmsg(sockfd, &msgsend, 0);
 			no_pack_sent_now++;
 			file_buf[idx].sent = 1;
+			printf("no of packets sent now is %d\n", no_pack_sent_now);
 		
 			printf("%s\n", iovsend[1].iov_base);
 
@@ -145,7 +147,7 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 					sendhdr.seq = file_buf[i].seq;
 					sendhdr.ts = file_buf[i].ts;
 					iovsend[1].iov_base = file_buf[i].data;
-					iovsend[1].iov_len = file_buf[i].data_size;
+					iovsend[1].iov_len = PAYLOAD_SIZE;
 					sent_bytes = sendmsg(sockfd, &msgsend, 0);
 					//no_pack_sent_now++;
 
@@ -165,6 +167,7 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 		
 		do{
 			n = Recvmsg( sockfd, &msgrecv, 0);
+			printf("last ack rcvd :%d\n", recvhdr.seq);
 				
 			ack_seq = recvhdr.seq;
 			ack_ts = recvhdr.ts;
@@ -192,17 +195,18 @@ void send_file( FILE *fp, int file_size, int sockfd, struct sockaddr* client_add
 
 			//find the point till which packets are sent
 			i=0;
-			while(file_buf[i].sent){
+			while(file_buf[i].sent && i<file_buf_size){
 				i++;
 			}
 			last_sent_seq_no = file_buf[i-1].seq;
-
+printf("here\n");
 		} while ( n == sizeof(struct dg_hdr) && ack_seq-1 < last_sent_seq_no );
 		
 		no_pack_sent_now = 0;
+	printf("\n\nCOMPLETE FILE SENT : %D\n\n", complete_file_sent_flag);
 	}
 	rtt_stop(&rttinfo, rtt_ts(&rttinfo) - recvhdr.ts);
-	
+printf("end of func\n");	
 
 }
 
@@ -441,7 +445,6 @@ printf("no of inter = %d\n", no_of_interface);
 					send_file( fpr, file_size, child_sockfd, recvfrom_addr);
 
 					printf("after sending file name\n");
-
 /*
 //while( fgets( file_data, file_data_size, fpr) != NULL){
 					while( fread( (void*)file_data, sizeof(char),512 , fpr) ){
