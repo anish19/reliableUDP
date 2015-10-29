@@ -15,10 +15,11 @@ static struct rtt_info rttinfo;
 static int rttinit = 0;
 static struct msghdr msgsend, msgrecv;
 static struct dg_hdr sendhdr, recvhdr;
-static void sig_alrm(int signo);
-static sigjmp_buf jmpbuf;
+//static void sig_alrm(int signo);
+//static sigjmp_buf jmpbuf;
 int client_window_size = 5;
-
+int seed,  mu;
+float p_loss;
 
 void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_size){
 
@@ -35,6 +36,20 @@ void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_si
 	last_write_size = file_size - (no_cwr*PAYLOAD_SIZE);
 	int max_window_size = client_window_size;
 	int idx = 0, i=0, window_empty = max_window_size;
+	recvhdr.seq = 0;
+	int random_no;
+		
+	for (i = 0; i < file_buf_size; ++i)
+	{
+		file_buf[i].sent = 0;
+		file_buf[i].ack = 0;
+		file_buf[i].seq = 0;
+		file_buf[i].ts = 0;
+		file_buf[i].drop = 0;
+		file_buf[i].data_size = 0;
+	}
+	i=0;
+	srand(seed);
 	
 	while(1){
 
@@ -50,60 +65,83 @@ void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_si
 		iovrecv[1].iov_len = PAYLOAD_SIZE;
 		msgrecv.msg_iov = iovrecv;
 		msgrecv.msg_iovlen = 2;
-	printf("\nwaiting to rcv %d\n", idx+1);
+		
+//		idx = recvhdr.seq;	//setting idx to print only
+//	printf("\nwaiting to rcv %d\n", idx+1);
 		n = Recvmsg(sockfd, &msgrecv, 0);
-	printf("\nrcvd some shit\n");	
+	printf("\nrcvd %d\n", recvhdr.seq);
+
+		idx = recvhdr.seq-1;	//setting actual idx value
 		file_buf[idx].drop = 0;
 		
 		//drop here
-		//*********//
-		//file_buf[idx].drop = 1;
-
-		file_buf[idx].seq 			= 	recvhdr.seq;
-		file_buf[idx].ts  			= 	recvhdr.ts;
-		file_buf[idx].ack 			= 	0;	//ack not sent yet. will set to 1 when ack sent
-
-		//reading payload
-		i=0;
-		do{
-			file_buf[idx].data[i]	=	file_data[i];
-			if(file_data[i] == '\0')
-				break;
-			i++;
-		}while(i < PAYLOAD_SIZE);
-
-		i=0;
-		while(1){
-			
-			if( !file_buf[i].drop ){
-				if(i == idx){
-					sendhdr.seq = file_buf[i].seq + 1;
-					break;
-				}
-			}
-			else{
-				sendhdr.seq = file_buf[i].seq;
-				break;		
-			}
-			i++;
+		random_no = rand()%10 + 1;
+		printf("random no is %d\n", random_no);
+		printf("p_loss is %f\n", p_loss);
+		if( random_no <= (p_loss*10) ){
+			file_buf[idx].drop = 1;
+			printf("dropped packet no: %d\n", idx+1);
 		}
 		
-		sendhdr.ts = recvhdr.ts;
-		sendhdr.window_empty = window_empty--;
-		msgsend.msg_namelen = sizeof(*server_addr);
-		iovsend[0].iov_base = (void*)&sendhdr;
-		iovsend[0].iov_len = sizeof(struct dg_hdr);
-		msgsend.msg_iov = iovsend;
-		msgsend.msg_iovlen = 1;
-	 
-		Sendmsg(sockfd, &msgsend, 0);
-		file_buf[idx].ack = 1;
-		printf( "Msg with seq no %d is:\n %s\n", recvhdr.seq ,iovrecv[1].iov_base);
-		printf("header of ack for seqno %d is:%d\n", recvhdr.seq, sendhdr.seq);
-		window_empty++;
-		idx++;
+		if( file_buf[idx].drop != 1){	//if not dropped
+			
+			file_buf[idx].seq 	= 	recvhdr.seq;
+			file_buf[idx].ts 	= 	recvhdr.ts;
+			file_buf[idx].ack 	= 	0;	//ack not sent yet. will set to 1 when ack sent
 
-		if(file_buf[file_buf_size].ack == 1)
+			//reading payload
+			i=0;
+			do{
+				file_buf[idx].data[i]	=	file_data[i];
+				if(file_data[i] == '\0')
+					break;
+				i++;
+			}while(i < PAYLOAD_SIZE);
+		
+		
+
+			i=0;
+			while(1){
+			
+				if( !file_buf[i].drop ){	//if not dropped
+					if(i == idx){
+						sendhdr.seq = file_buf[i].seq + 1;
+						break;
+					}
+				}
+				else{
+					sendhdr.seq = i+1;
+					break;		
+				}
+				i++;
+			}
+		
+			sendhdr.ts = recvhdr.ts;
+			sendhdr.window_empty = window_empty--;
+			msgsend.msg_namelen = sizeof(*server_addr);
+			iovsend[0].iov_base = (void*)&sendhdr;
+			iovsend[0].iov_len = sizeof(struct dg_hdr);
+			msgsend.msg_iov = iovsend;
+			msgsend.msg_iovlen = 1;
+	 
+			Sendmsg(sockfd, &msgsend, 0);
+			file_buf[idx].ack = 1;
+
+			printf("Server address is : %s\n", Sock_ntop_host(server_addr, sizeof(struct sockaddr*)) );
+		
+			printf("Port no of server is: %d\n", ((struct sockaddr_in*)server_addr)->sin_port );
+
+
+			printf( "Msg with seq no %d is:\n%s\n", recvhdr.seq ,iovrecv[1].iov_base);
+//			printf( "Msg with seq no %d is rcvd\n", recvhdr.seq);
+			printf("header of ack for seqno %d is:%d\n", recvhdr.seq, sendhdr.seq);
+			window_empty++;
+		
+			printf("ack no sent is %d\n", sendhdr.seq);
+		
+		}
+		
+		if(file_buf[file_buf_size-1].ack == 1)
 			break;
 	}
 
@@ -127,7 +165,7 @@ void recv_file( FILE *fp , int sockfd, struct sockaddr* server_addr, int file_si
 	file_data[last_write_size] = '\0';
 	n  = fwrite( file_data, sizeof(char), last_write_size/sizeof(char), fp);
 */
-
+printf("outside while\n");
 }
 
 
@@ -153,6 +191,8 @@ int main(int argc, char* argv[]){
 	struct in_addr server_in_addr;
 	struct sockaddr_in *client_host_addr_in, server_addr_in;
 	struct sockaddr *client_addr;
+	
+	client_host_addr_in = (struct sockaddr_in*) malloc(sizeof(struct sockaddr_in));
 
 	struct ifi_info* ifi = NULL;
 	struct ifi_info* ifihead = NULL;
@@ -169,9 +209,12 @@ int main(int argc, char* argv[]){
 	struct sockaddr_in *subnet_mask_in;
 	int server_is_local = 0;
 
+	subnet_mask_in = (struct sockaddr_in*) malloc(sizeof(struct sockaddr_in));
+	
 	struct sockaddr *IPclient_addr, *IPserver_addr;
 	struct sockaddr_in *IPclient_addr_in, *IPserver_addr_in;
 	
+	IPserver_addr = (struct sockaddr*) malloc(sizeof(struct sockaddr));
 	int sockfd; //socket fd for client
 	struct sockaddr *local_addr = NULL;
 	int local_addr_len = -1;
@@ -188,9 +231,10 @@ int main(int argc, char* argv[]){
 
 //	char file_data[512];
 	char requested_file_name[32], file_size_str[15];
-	int requested_file_name_len = 32, file_size, payload_size;
+	int requested_file_name_len = 0, file_size, payload_size;
 	FILE *fpw;
 
+	
 	char write_file_name[16];
 	
 	fp = fopen(argv[1], "r");	
@@ -203,8 +247,6 @@ int main(int argc, char* argv[]){
 	while (fgets(read_file_line, len, fp) != NULL) {
 //		printf("%s", read_file_line);
 		if(i == 0){
-			printf(" i = 0 is %d", i);
-
 			inet_aton(read_file_line, &server_in_addr);
 			server_addr_in.sin_addr = server_in_addr;
 
@@ -213,29 +255,60 @@ int main(int argc, char* argv[]){
 			IPserver_addr_in->sin_addr = server_in_addr;
 			IPserver_addr_in->sin_port = 60810;
 			IPserver_addr = (struct sockaddr*) IPserver_addr_in;
-			printf("server address from file is %s\n ", Sock_ntop_host(IPserver_addr, sizeof(IPserver_addr)));
+			printf("Server address is :  %s\n", Sock_ntop_host(IPserver_addr, sizeof(IPserver_addr)));
 			if(ret == -1)
 				printf("Given IP address is not valid IPv4 address.\nProvide a valid IPv4 address\n");
-			printf("\n");
 			for(i=0; i < 16; i++)
 				server_str_addr[i] = read_file_line[i];
 			i = 0;
 		}
-		if(i == 1)
+		if(i == 1){
 			server_port = atoi(read_file_line);
-
+			printf("Server port is : %d\n", server_port);
+		}
+		
 		if(i == 2){
-			printf("i = 2\n");
 			//requested_file_name = (char*) malloc(requested_file_name_len);
 			for(i = 0; i < 32; i++){
+				if(read_file_line[i]=='\n')
+					break;
 				requested_file_name[i] = read_file_line[i];
+				requested_file_name_len++;
 			}
-			i = 0;
+			printf("Requested file is : %s\n", requested_file_name);
+			i = 2;			
 		}
+		
+		if(i == 3){
+			client_window_size = atoi(read_file_line);
+			printf("Client Window size is : %d\n", client_window_size);
+		}
+
+		if(i == 4){
+			seed = atoi(read_file_line);
+			printf("seed value is : %d\n", seed);
+			
+		}
+
+		if(i == 5){
+			char *endptr;
+			printf("p_loss string is %s\n", read_file_line);
+			p_loss = strtof(read_file_line, NULL);
+			printf("Probality of loss is : %f\n", p_loss);
+		}
+		
+		if(i == 6){
+			mu = atoi(read_file_line);
+			printf("mu is : %d\n", mu);
+		}
+
 		i++;
 		
 	}
+	printf("\n");
+	i=0;
 	printf("File to be requested for is %s\n", requested_file_name);
+	printf("File name len is %d\n", requested_file_name_len);
 
 	ifihead = get_ifi_info_plus(AF_INET, 1);
 	for( ifi = ifihead; ifi != NULL; ifi = ifi->ifi_next){
@@ -402,24 +475,24 @@ int main(int argc, char* argv[]){
 	if( (ret = connect(sockfd, IPserver_addr, sizeof(*IPserver_addr)) ) < 0 ){
 		printf("connect to server failed\n");	
 	}
-
 	buf_len = strlen(buf_str);
 
 	ret = send( sockfd, requested_file_name, requested_file_name_len, 0);	
+printf("ret from send is %d\n", ret);
 
 	if( ret == -1){
 		printf("sendto failed\n ");
 	}
-	else if (ret < buf_len){
-		printf("sendto only sent %d bytes\n", ret);
-	}
+//	else if (ret < buf_len){
+//		printf("only sent %d bytes of file name\n", ret);
+//	}
 
 	ret = -1;
-	while(1){
+	
 		ret = recv( sockfd, new_server_port_str, 16, 0);
 		if(ret > -1)
-			break;
-	}
+			printf("port no not rcvd\n");
+	
 
 	new_server_port = atoi(new_server_port_str);
 	printf("new server port is %d\n", new_server_port);	
@@ -481,5 +554,5 @@ int main(int argc, char* argv[]){
 	if (read_file_line)
 		free(read_file_line);
 	
-
+return 1;
 }
