@@ -4,7 +4,7 @@ struct dg_hdr{
 	int window_empty;		//size of empty part of window
 };
 
-#define PAYLOAD_SIZE 512
+#define PAYLOAD_SIZE 500
 struct buf_ele{
 	int seq;
 	int ts;
@@ -13,5 +13,6 @@ struct buf_ele{
 	int data_size;
 	int drop;
 	int sent;
+	int cnsmd;
 };
 
